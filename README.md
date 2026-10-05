@@ -156,7 +156,7 @@ npm run gen          # refresh spec/openapi.yaml and src/generated/ from the mon
 `src/generated/` is generated; never edit it by hand. Until montek-api publishes its `openapi.yaml`
 release asset, `spec/openapi.yaml` is a provisional hand-written spec and may change.
 
-Releases: pushing a `vX.Y.Z` tag publishes to npm with provenance (see `.github/workflows/release.yml`).
+CI (`.github/workflows/ci.yml`) runs the tests on Node 20, 22 and 24, and the smoke check on Node 18, Deno and Bun.
 The SDK's major version follows the API's (`/v1` → `1.x`). Changes are listed in [CHANGELOG.md](CHANGELOG.md).
 
 ## License
