@@ -1,358 +1,1047 @@
-# PROVISIONAL SPEC — hand-written from the agreed v1 API contract
-# because montek-api has not published an `openapi.yaml` release asset yet.
-# `npm run gen` replaces this file with the real asset once one exists.
-# Shapes marked `x-provisional: true` are guesses not fixed by the contract; expect them to change.
 openapi: 3.1.0
 info:
   title: Montek API
-  version: 1.0.0-provisional
-  x-provisional: true
+  version: 0.1.0
+  description: 'Errors share one shape: `{ "error": { "code", "message" } }`.'
 servers:
   - url: https://api.montek.io
+tags:
+  - name: Extract
+    description: Fields, their position and line items from business documents.
+  - name: CAD
+    description: Hand sketches to DXF, as jobs.
+  - name: Models
+    description: The models and their plans.
+  - name: Account
+    description: Your key, organization, plans and usage.
 security:
-  - bearer: []
+  - apiKey: []
+components:
+  securitySchemes:
+    apiKey:
+      type: http
+      scheme: bearer
+      description: "An API key: `mk_live_…` is billed; `mk_test_…` returns sample
+        results and is never billed."
+  schemas:
+    CadJob:
+      type: object
+      properties:
+        id:
+          type: string
+          example: cad_8fJ2kLmQ4rTz9VwX
+        model:
+          type: string
+          example: fansipan-cad-1.0
+        status:
+          type: string
+          enum:
+            - queued
+            - running
+            - succeeded
+            - failed
+        created_at:
+          type: string
+        finished_at:
+          type:
+            - string
+            - "null"
+        parts:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+                example: Bracket
+              dxf_url:
+                type: string
+                description: The part as DXF (millimetres). Needs the same Authorization header.
+                example: https://api.montek.io/v1/cad/cad_8fJ2kLmQ4rTz9VwX/parts/1
+              bbox:
+                type: array
+                items:
+                  type: number
+                description: "[min_x, min_y, max_x, max_y] in millimetres."
+                example:
+                  - 0
+                  - 0
+                  - 80
+                  - 40
+            required:
+              - name
+              - dxf_url
+              - bbox
+          description: When the job succeeded.
+        usage:
+          type: object
+          properties:
+            unit:
+              type: string
+              enum:
+                - part
+            count:
+              type: integer
+          required:
+            - unit
+            - count
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+          required:
+            - code
+            - message
+          description: When the job failed.
+      required:
+        - id
+        - model
+        - status
+        - created_at
+        - finished_at
+      description: Jobs and their DXF files are kept for 7 days.
+    Model:
+      type: object
+      properties:
+        id:
+          type: string
+          example: langbiang-extract-1.0
+        endpoint:
+          type: string
+          example: /v1/extract
+        unit:
+          type: string
+          description: What one unit of usage is.
+          example: page
+        description:
+          type: string
+        plans:
+          type: array
+          items:
+            $ref: "#/components/schemas/Plan"
+      required:
+        - id
+        - endpoint
+        - unit
+        - description
+        - plans
+    Plan:
+      type: object
+      properties:
+        tier:
+          type: string
+          example: basic
+        currency:
+          type: string
+          example: jpy
+        monthly_fee:
+          type:
+            - integer
+            - "null"
+          description: "In the currency’s smallest unit, before tax. null: priced by
+            contract."
+          example: 20000
+        included_units:
+          type:
+            - integer
+            - "null"
+          description: Units included each month.
+          example: 1000
+        overage_unit_price:
+          type:
+            - integer
+            - "null"
+          description: Price of each unit beyond included_units, before tax.
+          example: 25
+      required:
+        - tier
+        - currency
+        - monthly_fee
+        - included_units
+        - overage_unit_price
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+          required:
+            - code
+            - message
+      required:
+        - error
+      example:
+        error:
+          code: unauthorized
+          message: Missing or invalid API key.
+    ExtractResponse:
+      type: object
+      properties:
+        fields:
+          type: array
+          items:
+            $ref: "#/components/schemas/Field"
+          description: Up to 50 per page, most important first.
+        line_items:
+          type: array
+          items:
+            $ref: "#/components/schemas/LineItem"
+        comment:
+          type: string
+          description: "A short note on the document: what it is and what to double-check,
+            or the answer to `question`."
+        refs:
+          type: array
+          items:
+            type: string
+          description: Keys of the fields the comment mentions.
+        id:
+          type: string
+          example: ext_3kTq9wYb2mNc7XvR
+        model:
+          type: string
+          example: langbiang-extract-1.0
+        pages:
+          type: integer
+        usage:
+          type: object
+          properties:
+            unit:
+              type: string
+              enum:
+                - page
+            count:
+              type: integer
+              description: Pages billed by this call.
+          required:
+            - unit
+            - count
+      required:
+        - fields
+        - line_items
+        - comment
+        - refs
+        - id
+        - model
+        - pages
+        - usage
+    Field:
+      type: object
+      properties:
+        key:
+          type: string
+          description: snake_case id, stable for the same field across documents.
+          example: order_number
+        label:
+          type: string
+          description: The field’s name as printed, not translated.
+          example: 注文番号
+        value:
+          type: string
+          description: The value as printed, not translated.
+          example: PO-2026-0815
+        box:
+          $ref: "#/components/schemas/Box"
+        unsure:
+          type: boolean
+          description: true when the value was hard to read.
+        page:
+          type: integer
+          description: 1-based page number.
+          example: 1
+      required:
+        - key
+        - label
+        - value
+        - unsure
+        - page
+    Box:
+      type: array
+      items:
+        type: number
+      description: "[x, y, width, height] as fractions (0 to 1) of the page, from its
+        top-left corner."
+      example:
+        - 0.62
+        - 0.08
+        - 0.21
+        - 0.03
+    LineItem:
+      type: object
+      properties:
+        page:
+          type: integer
+        box:
+          $ref: "#/components/schemas/Box"
+        cells:
+          type: array
+          items:
+            type: object
+            properties:
+              key:
+                type: string
+              label:
+                type: string
+              value:
+                type: string
+            required:
+              - key
+              - label
+              - value
+          example:
+            - key: item
+              label: 品名
+              value: ステンレスボルト M8
+        unsure:
+          type: boolean
+      required:
+        - page
+        - cells
+        - unsure
+      description: One row of a table of goods or services.
+    Usage:
+      type: object
+      properties:
+        from:
+          type: string
+        to:
+          type: string
+        days:
+          type: array
+          items:
+            type: object
+            properties:
+              date:
+                type: string
+                example: 2026-10-05
+              model:
+                type: string
+              units:
+                type: integer
+              overage_units:
+                type: integer
+              calls:
+                type: integer
+              errors:
+                type: integer
+                description: Calls that failed and were not billed.
+            required:
+              - date
+              - model
+              - units
+              - overage_units
+              - calls
+              - errors
+        plans:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlanStatus"
+      required:
+        - from
+        - to
+        - days
+        - plans
+    PlanStatus:
+      type: object
+      properties:
+        model:
+          type: string
+          example: langbiang-extract-1.0
+        tier:
+          type: string
+          example: basic
+        status:
+          type: string
+          description: active, past_due, …
+          example: active
+        period_start:
+          type: string
+          example: 2026-10-01T00:00:00.000Z
+        period_end:
+          type: string
+          example: 2026-11-01T00:00:00.000Z
+        included_units:
+          type: integer
+        used_units:
+          type: integer
+          description: Units used this period, overage included.
+        overage_units:
+          type: integer
+        overage_cap:
+          type: integer
+          description: Overage units allowed this period; calls past it get 402.
+      required:
+        - model
+        - tier
+        - status
+        - period_start
+        - period_end
+        - included_units
+        - used_units
+        - overage_units
+        - overage_cap
+    Me:
+      type: object
+      properties:
+        organization:
+          type: object
+          properties:
+            id:
+              type: string
+            name:
+              type: string
+          required:
+            - id
+            - name
+        key:
+          type: object
+          properties:
+            id:
+              type: string
+            mode:
+              type: string
+              enum:
+                - live
+                - test
+            scopes:
+              type:
+                - array
+                - "null"
+              items:
+                type: string
+              description: "Endpoints the key may call; null: all."
+          required:
+            - id
+            - mode
+            - scopes
+        webhook_secret:
+          type:
+            - string
+            - "null"
+          description: Verifies the Montek-Signature of webhooks for jobs started with
+            keys of this mode (live or test).
+        plans:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlanStatus"
+      required:
+        - organization
+        - key
+        - webhook_secret
+        - plans
+  parameters: {}
 paths:
   /v1/models:
     get:
       operationId: listModels
-      summary: Models, their billing unit, plans and prices
+      tags:
+        - Models
+      summary: List models and their plans
+      description: Every Montek model with its unit of usage and its monthly plans.
+        Prices exclude tax.
       responses:
-        '200':
-          description: OK
+        "200":
+          description: The models.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/ModelList' }
-        default: { $ref: '#/components/responses/Error' }
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Model"
+                required:
+                  - data
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: Too many requests for this key. Retry after the number of seconds
+            in Retry-After.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /v1/extract:
     post:
       operationId: extract
-      summary: Read a business document into fields, boxes and line items
+      tags:
+        - Extract
+      summary: Read a business document
+      description: Reads an order, invoice, form or fax and returns its fields with
+        their position, and its line items. Each PDF page or image counts as one
+        page of usage. Keys starting `mk_test_` return a fixed sample and are
+        never billed.
       parameters:
-        - $ref: '#/components/parameters/IdempotencyKey'
+        - schema:
+            type: string
+            description: A retry with the same key and request is billed once.
+          required: false
+          description: A retry with the same key and request is billed once.
+          name: idempotency-key
+          in: header
       requestBody:
-        required: true
         content:
           multipart/form-data:
-            schema: { $ref: '#/components/schemas/ExtractMultipart' }
+            schema:
+              type: object
+              properties:
+                model:
+                  type: string
+                  enum:
+                    - langbiang-extract-1.0
+                lang:
+                  type: string
+                  enum:
+                    - en
+                    - ja
+                    - vi
+                  description: Your language, for `comment` when neither a question nor the
+                    document decides it.
+                question:
+                  type: string
+                  maxLength: 500
+                  description: A question about the document, answered in `comment`.
+                file:
+                  type: string
+                  format: binary
+                  description: PDF (up to 10 MB, 30 pages) or PNG, JPEG, WebP, GIF image (up to 5
+                    MB).
+                fields:
+                  anyOf:
+                    - type: string
+                      minLength: 1
+                      maxLength: 64
+                    - type: array
+                      items:
+                        type: string
+                        minLength: 1
+                        maxLength: 64
+                      maxItems: 50
+                  description: "Field names to look for first: repeat the part, or separate names
+                    with commas."
+              required:
+                - model
+                - file
           application/json:
-            schema: { $ref: '#/components/schemas/ExtractJson' }
+            schema:
+              type: object
+              properties:
+                model:
+                  type: string
+                  enum:
+                    - langbiang-extract-1.0
+                lang:
+                  type: string
+                  enum:
+                    - en
+                    - ja
+                    - vi
+                  description: Your language, for `comment` when neither a question nor the
+                    document decides it.
+                question:
+                  type: string
+                  maxLength: 500
+                  description: A question about the document, answered in `comment`.
+                url:
+                  type: string
+                  format: uri
+                  description: Where to download the file from; same limits as an upload.
+                fields:
+                  type: array
+                  items:
+                    type: string
+                    minLength: 1
+                    maxLength: 64
+                  maxItems: 50
+                  description: Field names to look for first.
+              required:
+                - model
+                - url
       responses:
-        '200':
-          description: OK
+        "200":
+          description: What the document says.
+          headers:
+            X-Usage-Remaining:
+              schema:
+                type: string
+                description: Included pages left this period (live keys).
+              required: false
+              description: Included pages left this period (live keys).
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/ExtractResult' }
-        default: { $ref: '#/components/responses/Error' }
+              schema:
+                $ref: "#/components/schemas/ExtractResponse"
+        "400":
+          description: The request is malformed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "402":
+          description: No active plan for this model, or the plan does not allow more use.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: The key is not allowed to call this endpoint.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          description: The file is too large.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "415":
+          description: The file type is not supported.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: The document could not be read.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: Too many requests for this key. Retry after the number of seconds
+            in Retry-After.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: The model is temporarily unavailable. Retry later.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /v1/cad:
     post:
       operationId: createCadJob
-      summary: Start a sketch-to-DXF job
+      tags:
+        - CAD
+      summary: Draw a sketch as CAD
+      description: Starts a job that turns a hand sketch into one DXF per part. Poll
+        GET /v1/cad/{id} or pass webhook_url. Each part drawn counts as one part
+        of usage, billed when the job succeeds. Keys starting `mk_test_` get a
+        sample job that has already succeeded.
       parameters:
-        - $ref: '#/components/parameters/IdempotencyKey'
+        - schema:
+            type: string
+            description: A retry with the same key and request returns the same job.
+          required: false
+          description: A retry with the same key and request returns the same job.
+          name: idempotency-key
+          in: header
       requestBody:
-        required: true
         content:
           multipart/form-data:
-            schema: { $ref: '#/components/schemas/CadMultipart' }
+            schema:
+              type: object
+              properties:
+                model:
+                  type: string
+                  enum:
+                    - fansipan-cad-1.0
+                webhook_url:
+                  type: string
+                  format: uri
+                  description: Receives `cad.succeeded` or `cad.failed` when the job ends, signed
+                    with Montek-Signature.
+                file:
+                  type: string
+                  format: binary
+                  description: "The sketch: a photo or scan (PNG, JPEG, WebP, GIF up to 5 MB, or
+                    PDF up to 10 MB)."
+              required:
+                - model
+                - file
           application/json:
-            schema: { $ref: '#/components/schemas/CadJson' }
+            schema:
+              type: object
+              properties:
+                model:
+                  type: string
+                  enum:
+                    - fansipan-cad-1.0
+                webhook_url:
+                  type: string
+                  format: uri
+                  description: Receives `cad.succeeded` or `cad.failed` when the job ends, signed
+                    with Montek-Signature.
+                url:
+                  type: string
+                  format: uri
+                  description: Where to download the sketch from; same limits as an upload.
+              required:
+                - model
+                - url
       responses:
-        '202':
-          description: Job accepted
+        "202":
+          description: The job.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/CadJob' }
-        default: { $ref: '#/components/responses/Error' }
+              schema:
+                $ref: "#/components/schemas/CadJob"
+        "400":
+          description: The request is malformed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "402":
+          description: No active plan for this model, or the plan does not allow more use.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: The key is not allowed to call this endpoint.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          description: The file is too large.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "415":
+          description: The file type is not supported.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: The document could not be read.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: Too many requests for this key. Retry after the number of seconds
+            in Retry-After.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: The model is temporarily unavailable. Retry later.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /v1/cad/{id}:
     get:
       operationId: getCadJob
-      summary: Job status; parts and usage once succeeded
+      tags:
+        - CAD
+      summary: A CAD job
       parameters:
-        - name: id
-          in: path
+        - schema:
+            type: string
           required: true
-          schema: { type: string }
+          name: id
+          in: path
       responses:
-        '200':
-          description: OK
+        "200":
+          description: The job.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/CadJob' }
-        default: { $ref: '#/components/responses/Error' }
+              schema:
+                $ref: "#/components/schemas/CadJob"
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: Too many requests for this key. Retry after the number of seconds
+            in Retry-After.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /v1/cad/{id}/parts/{index}:
+    get:
+      operationId: getCadPart
+      tags:
+        - CAD
+      summary: One part as DXF
+      parameters:
+        - schema:
+            type: string
+          required: true
+          name: id
+          in: path
+        - schema:
+            type: integer
+            minimum: 1
+          required: true
+          name: index
+          in: path
+      responses:
+        "200":
+          description: ASCII DXF in millimetres.
+          content:
+            application/dxf:
+              schema:
+                type: string
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: Too many requests for this key. Retry after the number of seconds
+            in Retry-After.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /v1/usage:
     get:
       operationId: getUsage
-      summary: Usage of the org, with this period's quota and overage
+      tags:
+        - Account
+      summary: Usage by day and this period’s plans
+      description: Your organization’s billed usage per day (UTC) and model, and each
+        plan’s included units, use and overage this period.
       parameters:
-        - { name: from, in: query, schema: { type: string, format: date } }
-        - { name: to, in: query, schema: { type: string, format: date } }
-        - { name: model, in: query, schema: { type: string } }
-        - { name: key, in: query, description: API key id, schema: { type: string } }
+        - schema:
+            type: string
+            format: date
+            description: "First day, UTC. Default: 29 days before `to`."
+            example: 2026-10-01
+          required: false
+          description: "First day, UTC. Default: 29 days before `to`."
+          name: from
+          in: query
+        - schema:
+            type: string
+            format: date
+            description: "Last day, UTC. Default: today."
+            example: 2026-10-31
+          required: false
+          description: "Last day, UTC. Default: today."
+          name: to
+          in: query
+        - schema:
+            type: string
+            example: langbiang-extract-1.0
+          required: false
+          name: model
+          in: query
+        - schema:
+            type: string
+            description: Only calls made with this key id.
+          required: false
+          description: Only calls made with this key id.
+          name: key
+          in: query
       responses:
-        '200':
-          description: OK
+        "200":
+          description: Usage.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/Usage' }
-        default: { $ref: '#/components/responses/Error' }
+              schema:
+                $ref: "#/components/schemas/Usage"
+        "400":
+          description: The request is malformed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: The key is not allowed to call this endpoint.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: Too many requests for this key. Retry after the number of seconds
+            in Retry-After.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /v1/me:
     get:
       operationId: getMe
-      summary: The org behind the key and its plan per model
+      tags:
+        - Account
+      summary: The key, its organization and its plans
       responses:
-        '200':
-          description: OK
+        "200":
+          description: Who is calling.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/Me' }
-        default: { $ref: '#/components/responses/Error' }
+              schema:
+                $ref: "#/components/schemas/Me"
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: Too many requests for this key. Retry after the number of seconds
+            in Retry-After.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 webhooks:
-  cadJob:
+  cad.succeeded:
     post:
-      summary: Sent when a cad job finishes
-      description: >-
-        Signed with HMAC-SHA256 using the org's webhook secret. Header
-        `Montek-Signature: t=<unix seconds>,v1=<hex hmac of "<t>.<raw body>">`.
-      x-provisional: true
+      operationId: cadSucceeded
+      tags:
+        - CAD
+      summary: A CAD job succeeded
+      description: Sent to the job’s webhook_url. Check Montek-Signature with the
+        webhook secret of the key’s mode (GET /v1/me) before trusting the body.
       parameters:
-        - name: Montek-Signature
-          in: header
+        - schema:
+            type: string
+            description: '`t=<unix seconds>,v1=<hex HMAC-SHA256 of "<t>.<body>">`.'
+            example: t=1791200000,v1=9f86d081884c7d65…
           required: true
-          schema: { type: string }
+          description: '`t=<unix seconds>,v1=<hex HMAC-SHA256 of "<t>.<body>">`.'
+          name: montek-signature
+          in: header
       requestBody:
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/WebhookEvent' }
+            schema:
+              type: object
+              properties:
+                type:
+                  type: string
+                  enum:
+                    - cad.succeeded
+                data:
+                  $ref: "#/components/schemas/CadJob"
+              required:
+                - type
+                - data
+              example:
+                type: cad.succeeded
+                data:
+                  id: cad_8fJ2kLmQ4rTz9VwX
+                  model: fansipan-cad-1.0
+                  created_at: 2026-10-05T09:00:00.000Z
+                  finished_at: 2026-10-05T09:01:12.000Z
+                  status: succeeded
+                  parts:
+                    - name: Bracket
+                      dxf_url: https://api.montek.io/v1/cad/cad_8fJ2kLmQ4rTz9VwX/parts/1
+                      bbox:
+                        - 0
+                        - 0
+                        - 80
+                        - 40
+                  usage:
+                    unit: part
+                    count: 1
       responses:
-        '200': { description: Acknowledged }
-components:
-  securitySchemes:
-    bearer:
-      type: http
-      scheme: bearer
-      description: '`mk_live_…` keys are metered; `mk_test_…` keys return sample results and are not metered.'
-  parameters:
-    IdempotencyKey:
-      name: Idempotency-Key
-      in: header
-      required: false
-      schema: { type: string }
-  responses:
-    Error:
-      description: '401 bad key; 402 no plan for this model, overage cap reached or past due; 413 file too large; 415 unsupported type; 429 rate limited; 5xx server error.'
-      headers:
-        Retry-After: { schema: { type: string } }
-      content:
-        application/json:
-          schema: { $ref: '#/components/schemas/Error' }
-  schemas:
-    Error:
-      type: object
-      required: [error]
-      properties:
-        error:
-          type: object
-          required: [code, message]
-          properties:
-            code: { type: string }
-            message: { type: string }
-    Unit:
-      type: string
-      enum: [page, part]
-    UnitUsage:
-      type: object
-      required: [unit, count]
-      properties:
-        unit: { $ref: '#/components/schemas/Unit' }
-        count: { type: integer }
-    Plan:
-      type: object
-      x-provisional: true
-      required: [id, name, monthly_fee, included, overage_price, currency]
-      properties:
-        id: { type: string }
-        name: { type: string }
-        monthly_fee: { type: number }
-        included: { type: integer, description: Units included per period }
-        overage_price: { type: number, description: Price per unit above `included` }
-        currency: { type: string }
-    Model:
-      type: object
-      required: [id, unit, plans]
-      properties:
-        id: { type: string }
-        description: { type: string }
-        unit: { $ref: '#/components/schemas/Unit' }
-        plans:
-          type: array
-          items: { $ref: '#/components/schemas/Plan' }
-    ModelList:
-      type: object
-      x-provisional: true
-      required: [data]
-      properties:
-        data:
-          type: array
-          items: { $ref: '#/components/schemas/Model' }
-    ExtractOptions:
-      type: object
-      required: [model]
-      properties:
-        model: { type: string }
-        lang: { type: string, description: 'Hint for the document language, e.g. ja, vi, en' }
-        question: { type: string }
-        fields:
-          type: array
-          description: Suggested field keys
-          items: { type: string }
-    ExtractMultipart:
-      allOf:
-        - $ref: '#/components/schemas/ExtractOptions'
-        - type: object
-          required: [file]
-          properties:
-            file: { type: string, format: binary, description: 'png, jpeg, webp, gif or pdf, up to 10 MB' }
-    ExtractJson:
-      allOf:
-        - $ref: '#/components/schemas/ExtractOptions'
-        - type: object
-          required: [url]
-          properties:
-            url: { type: string, format: uri }
-    Field:
-      type: object
-      required: [key, label, value, box, unsure, page]
-      properties:
-        key: { type: string }
-        label: { type: string, description: As printed on the document }
-        value: { type: string, description: As printed on the document }
-        box:
-          type: array
-          description: '[x, y, w, h] normalised 0..1 to the page'
-          items: { type: number }
-          minItems: 4
-          maxItems: 4
-        unsure: { type: boolean }
-        page: { type: integer }
-    ExtractResult:
-      type: object
-      required: [id, model, pages, fields, line_items, comment, refs, usage]
-      properties:
-        id: { type: string }
-        model: { type: string }
-        pages: { type: integer }
-        fields:
-          type: array
-          items: { $ref: '#/components/schemas/Field' }
-        line_items:
-          type: array
-          x-provisional: true
-          items:
-            type: object
-            additionalProperties: true
-        comment: { type: string }
-        refs:
-          type: array
-          description: Keys of the fields the comment mentions
-          items: { type: string }
-        usage: { $ref: '#/components/schemas/UnitUsage' }
-    CadOptions:
-      type: object
-      required: [model]
-      properties:
-        model: { type: string }
-        webhook_url:
-          type: string
-          format: uri
-          x-provisional: true
-          description: Called with a signed `WebhookEvent` when the job finishes
-    CadMultipart:
-      allOf:
-        - $ref: '#/components/schemas/CadOptions'
-        - type: object
-          required: [file]
-          properties:
-            file: { type: string, format: binary }
-    CadJson:
-      allOf:
-        - $ref: '#/components/schemas/CadOptions'
-        - type: object
-          required: [url]
-          properties:
-            url: { type: string, format: uri }
-    CadStatus:
-      type: string
-      x-provisional: true
-      enum: [queued, running, succeeded, failed]
-    Part:
-      type: object
-      required: [name, dxf_url, bbox]
-      properties:
-        name: { type: string }
-        dxf_url: { type: string, format: uri }
-        bbox:
-          type: array
-          items: { type: number }
-          minItems: 4
-          maxItems: 4
-    CadJob:
-      type: object
-      required: [id, status]
-      properties:
-        id: { type: string }
-        model: { type: string }
-        status: { $ref: '#/components/schemas/CadStatus' }
-        parts:
-          type: array
-          items: { $ref: '#/components/schemas/Part' }
-        usage: { $ref: '#/components/schemas/UnitUsage' }
-        error: { $ref: '#/components/schemas/Error/properties/error' }
-    WebhookEvent:
-      type: object
-      x-provisional: true
-      required: [type, data]
-      properties:
-        type:
-          type: string
-          enum: [cad.succeeded, cad.failed]
-        data: { $ref: '#/components/schemas/CadJob' }
-    UsageRow:
-      type: object
-      x-provisional: true
-      required: [model, unit, count, included, overage]
-      properties:
-        model: { type: string }
-        unit: { $ref: '#/components/schemas/Unit' }
-        count: { type: integer, description: Units used in the range }
-        included: { type: integer, description: Units included this period }
-        overage: { type: integer, description: Units above quota this period }
-    Usage:
-      type: object
-      x-provisional: true
-      required: [from, to, data]
-      properties:
-        from: { type: string, format: date }
-        to: { type: string, format: date }
-        data:
-          type: array
-          items: { $ref: '#/components/schemas/UsageRow' }
-    Me:
-      type: object
-      x-provisional: true
-      required: [org, subscriptions]
-      properties:
-        org:
-          type: object
-          required: [id, name]
-          properties:
-            id: { type: string }
-            name: { type: string }
-        subscriptions:
-          type: array
-          items:
-            type: object
-            required: [model, plan, status]
-            properties:
-              model: { type: string }
-              plan: { type: string }
-              status: { type: string }
+        "200":
+          description: Any 2xx acknowledges the event. Otherwise it is sent again after 2
+            s, then after another 10 s, then dropped; GET /v1/cad/{id} keeps the
+            result.
+  cad.failed:
+    post:
+      operationId: cadFailed
+      tags:
+        - CAD
+      summary: A CAD job failed
+      description: Sent to the job’s webhook_url. Check Montek-Signature with the
+        webhook secret of the key’s mode (GET /v1/me) before trusting the body.
+      parameters:
+        - schema:
+            type: string
+            description: '`t=<unix seconds>,v1=<hex HMAC-SHA256 of "<t>.<body>">`.'
+            example: t=1791200000,v1=9f86d081884c7d65…
+          required: true
+          description: '`t=<unix seconds>,v1=<hex HMAC-SHA256 of "<t>.<body>">`.'
+          name: montek-signature
+          in: header
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                type:
+                  type: string
+                  enum:
+                    - cad.failed
+                data:
+                  $ref: "#/components/schemas/CadJob"
+              required:
+                - type
+                - data
+              example:
+                type: cad.failed
+                data:
+                  id: cad_8fJ2kLmQ4rTz9VwX
+                  model: fansipan-cad-1.0
+                  created_at: 2026-10-05T09:00:00.000Z
+                  finished_at: 2026-10-05T09:01:12.000Z
+                  status: failed
+                  error:
+                    code: unreadable_document
+                    message: The sketch could not be read. Check that the file opens and shows a
+                      drawing.
+      responses:
+        "200":
+          description: Any 2xx acknowledges the event. Otherwise it is sent again after 2
+            s, then after another 10 s, then dropped; GET /v1/cad/{id} keeps the
+            result.

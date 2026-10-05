@@ -7,7 +7,7 @@ import type { CadJob, CadParams, CadResult } from '../types.js';
 export class Cad {
   constructor(private readonly client: Montek) {}
 
-  /** Start a sketch → DXF job. It runs for a while: `await job.wait()`, or get a signed webhook (`webhookUrl`). */
+  /** Start a sketch → DXF job. It runs for a while: `await job.wait()`, or get a signed webhook (`webhookUrl`). Jobs are kept 7 days. */
   async create({ file, ...options }: CadParams): Promise<Job> {
     return new Job(this.client, await this.client.request('POST', '/v1/cad', { body: await uploadBody(file, options) }));
   }
@@ -15,6 +15,11 @@ export class Cad {
   /** Current state of a job, e.g. after a webhook or a restart. */
   async get(id: string): Promise<Job> {
     return new Job(this.client, await this.client.request('GET', `/v1/cad/${encodeURIComponent(id)}`));
+  }
+
+  /** Part `index` (1-based, in the order of `parts`) of a succeeded job, as ASCII DXF in millimetres. */
+  getPart(id: string, index: number): Promise<string> {
+    return this.client.request('GET', `/v1/cad/${encodeURIComponent(id)}/parts/${index}`, { text: true });
   }
 }
 

@@ -18,11 +18,13 @@ try {
     file,
     model: 'langbiang-extract-1.0',
     lang: 'ja',
-    fields: ['po_number', 'order_date', 'supplier', 'delivery_date', 'total'], // hints, not a schema
+    fields: ['order_number', 'order_date', 'supplier', 'delivery_date', 'total'], // hints, not a schema
   });
 
   console.table(order.fields.map((f) => ({ key: f.key, label: f.label, value: f.value, page: f.page, unsure: f.unsure ? '?' : '' })));
-  if (order.lineItems.length) console.table(order.lineItems);
+  // One row per line item, one column per cell key.
+  const rows = order.lineItems.map((row) => Object.fromEntries(row.cells.map((c) => [c.key, c.value])));
+  if (rows.length) console.table(rows);
   if (order.comment) console.log(order.comment);
   console.log(`${order.pages} page(s), billed ${order.usage.count} ${order.usage.unit}(s)`);
 } catch (err) {

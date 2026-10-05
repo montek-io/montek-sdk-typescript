@@ -11,17 +11,17 @@ const result = {
   id: 'ext_1',
   model: 'langbiang-extract-1.0',
   pages: 1,
-  fields: [{ key: 'po_number', label: '注文番号', value: 'PO-123', box: [0.1, 0.1, 0.2, 0.05], unsure: false, page: 1 }],
-  line_items: [{ item_code: 'A-1', qty: '2' }],
+  fields: [{ key: 'order_number', label: '注文番号', value: 'PO-123', box: [0.1, 0.1, 0.2, 0.05], unsure: false, page: 1 }],
+  line_items: [{ page: 1, box: [0.1, 0.4, 0.8, 0.03], cells: [{ key: 'item', label: '品名', value: 'ボルト M8' }], unsure: false }],
   comment: 'ok',
-  refs: ['po_number'],
+  refs: ['order_number'],
   usage: { unit: 'page', count: 1 },
 };
 
 describe('extract', () => {
   it('uploads bytes as multipart and camelCases the result', async () => {
     const { client, calls } = mockClient([json(result)]);
-    const r = await client.extract({ file: Buffer.from(PNG), model: 'langbiang-extract-1.0', lang: 'ja', fields: ['po_number', 'total'] });
+    const r = await client.extract({ file: Buffer.from(PNG), model: 'langbiang-extract-1.0', lang: 'ja', fields: ['order_number', 'total'] });
 
     const req = calls[0]!;
     expect(req.method).toBe('POST');
@@ -34,9 +34,9 @@ describe('extract', () => {
     expect(file.name).toBe('file');
     expect(form.get('model')).toBe('langbiang-extract-1.0');
     expect(form.get('lang')).toBe('ja');
-    expect(form.getAll('fields')).toEqual(['po_number', 'total']);
+    expect(form.getAll('fields')).toEqual(['order_number', 'total']);
 
-    expect(r.lineItems).toEqual([{ itemCode: 'A-1', qty: '2' }]);
+    expect(r.lineItems[0]!.cells).toEqual([{ key: 'item', label: '品名', value: 'ボルト M8' }]);
     expect(r.fields[0]!.value).toBe('PO-123');
     expect(r.usage).toEqual({ unit: 'page', count: 1 });
   });

@@ -3,11 +3,14 @@ import { JobFailedError, MontekError } from '../src/index.js';
 import { json, mockClient } from './helpers.js';
 
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0, 0, 0, 0, 0, 0, 0, 0]);
+const times = { created_at: '2026-10-05T09:00:00.000Z', finished_at: null };
 const done = {
   id: 'cad_1',
   model: 'fansipan-cad-1.0',
   status: 'succeeded',
-  parts: [{ name: 'bracket', dxf_url: 'https://files.test/bracket.dxf', bbox: [0, 0, 120, 80] }],
+  created_at: '2026-10-05T09:00:00.000Z',
+  finished_at: '2026-10-05T09:01:12.000Z',
+  parts: [{ name: 'Bracket', dxf_url: 'https://api.test/v1/cad/cad_1/parts/1', bbox: [0, 0, 80, 40] }],
   usage: { unit: 'part', count: 1 },
 };
 
@@ -17,8 +20,8 @@ describe('cad', () => {
   it('creates a job with a webhook URL and polls it with backoff until it succeeds', async () => {
     vi.useFakeTimers();
     const { client, calls } = mockClient([
-      json({ id: 'cad_1', status: 'queued' }, 202),
-      json({ id: 'cad_1', status: 'running' }),
+      json({ id: 'cad_1', model: 'fansipan-cad-1.0', status: 'queued', ...times }, 202),
+      json({ id: 'cad_1', model: 'fansipan-cad-1.0', status: 'running', ...times }),
       json(done),
     ]);
     const job = await client.cad.create({ file: PNG, model: 'fansipan-cad-1.0', webhookUrl: 'https://me.test/hook' });
@@ -36,7 +39,8 @@ describe('cad', () => {
     const result = await p;
 
     expect(calls.slice(1).map((c) => `${c.method} ${c.url}`)).toEqual(Array(2).fill('GET https://api.test/v1/cad/cad_1'));
-    expect(result.parts[0]!.dxfUrl).toBe('https://files.test/bracket.dxf');
+    expect(result.parts[0]!.dxfUrl).toBe('https://api.test/v1/cad/cad_1/parts/1');
+    expect(result.finishedAt).toBe('2026-10-05T09:01:12.000Z');
     expect(result.usage.count).toBe(1);
     expect(job.status).toBe('succeeded');
   });
@@ -46,6 +50,14 @@ describe('cad', () => {
     const job = await client.cad.get('cad_1');
     await expect(job.wait()).resolves.toMatchObject({ status: 'succeeded' });
     expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('getPart() downloads one part as DXF text', async () => {
+    const dxf = '0\nSECTION\n2\nENTITIES\n0\nENDSEC\n0\nEOF\n';
+    const { client, calls } = mockClient([new Response(dxf, { headers: { 'content-type': 'application/dxf' } })]);
+    await expect(client.cad.getPart('cad_1', 1)).resolves.toBe(dxf);
+    expect(`${calls[0]!.method} ${calls[0]!.url}`).toBe('GET https://api.test/v1/cad/cad_1/parts/1');
+    expect(calls[0]!.headers.get('authorization')).toBe('Bearer mk_test_abc');
   });
 
   it('throws JobFailedError with the job error', async () => {

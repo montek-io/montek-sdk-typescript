@@ -11,7 +11,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Models, their billing unit, plans and prices */
+        /**
+         * List models and their plans
+         * @description Every Montek model with its unit of usage and its monthly plans. Prices exclude tax.
+         */
         get: operations["listModels"];
         put?: never;
         post?: never;
@@ -30,7 +33,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Read a business document into fields, boxes and line items */
+        /**
+         * Read a business document
+         * @description Reads an order, invoice, form or fax and returns its fields with their position, and its line items. Each PDF page or image counts as one page of usage. Keys starting `mk_test_` return a fixed sample and are never billed.
+         */
         post: operations["extract"];
         delete?: never;
         options?: never;
@@ -47,7 +53,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Start a sketch-to-DXF job */
+        /**
+         * Draw a sketch as CAD
+         * @description Starts a job that turns a hand sketch into one DXF per part. Poll GET /v1/cad/{id} or pass webhook_url. Each part drawn counts as one part of usage, billed when the job succeeds. Keys starting `mk_test_` get a sample job that has already succeeded.
+         */
         post: operations["createCadJob"];
         delete?: never;
         options?: never;
@@ -62,8 +71,25 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Job status; parts and usage once succeeded */
+        /** A CAD job */
         get: operations["getCadJob"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/cad/{id}/parts/{index}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One part as DXF */
+        get: operations["getCadPart"];
         put?: never;
         post?: never;
         delete?: never;
@@ -79,7 +105,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Usage of the org, with this period's quota and overage */
+        /**
+         * Usage by day and this period’s plans
+         * @description Your organization’s billed usage per day (UTC) and model, and each plan’s included units, use and overage this period.
+         */
         get: operations["getUsage"];
         put?: never;
         post?: never;
@@ -96,7 +125,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** The org behind the key and its plan per model */
+        /** The key, its organization and its plans */
         get: operations["getMe"];
         put?: never;
         post?: never;
@@ -108,7 +137,7 @@ export interface paths {
     };
 }
 export interface webhooks {
-    cadJob: {
+    "cad.succeeded": {
         parameters: {
             query?: never;
             header?: never;
@@ -118,33 +147,30 @@ export interface webhooks {
         get?: never;
         put?: never;
         /**
-         * Sent when a cad job finishes
-         * @description Signed with HMAC-SHA256 using the org's webhook secret. Header `Montek-Signature: t=<unix seconds>,v1=<hex hmac of "<t>.<raw body>">`.
+         * A CAD job succeeded
+         * @description Sent to the job’s webhook_url. Check Montek-Signature with the webhook secret of the key’s mode (GET /v1/me) before trusting the body.
          */
-        post: {
-            parameters: {
-                query?: never;
-                header: {
-                    "Montek-Signature": string;
-                };
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: {
-                content: {
-                    "application/json": components["schemas"]["WebhookEvent"];
-                };
-            };
-            responses: {
-                /** @description Acknowledged */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
+        post: operations["cadSucceeded"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "cad.failed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
         };
+        get?: never;
+        put?: never;
+        /**
+         * A CAD job failed
+         * @description Sent to the job’s webhook_url. Check Montek-Signature with the webhook secret of the key’s mode (GET /v1/me) before trusting the body.
+         */
+        post: operations["cadFailed"];
         delete?: never;
         options?: never;
         head?: never;
@@ -154,161 +180,225 @@ export interface webhooks {
 }
 export interface components {
     schemas: {
+        /** @description Jobs and their DXF files are kept for 7 days. */
+        CadJob: {
+            /** @example cad_8fJ2kLmQ4rTz9VwX */
+            id: string;
+            /** @example fansipan-cad-1.0 */
+            model: string;
+            /** @enum {string} */
+            status: "queued" | "running" | "succeeded" | "failed";
+            created_at: string;
+            finished_at: string | null;
+            /** @description When the job succeeded. */
+            parts?: {
+                /** @example Bracket */
+                name: string;
+                /**
+                 * @description The part as DXF (millimetres). Needs the same Authorization header.
+                 * @example https://api.montek.io/v1/cad/cad_8fJ2kLmQ4rTz9VwX/parts/1
+                 */
+                dxf_url: string;
+                /**
+                 * @description [min_x, min_y, max_x, max_y] in millimetres.
+                 * @example [
+                 *       0,
+                 *       0,
+                 *       80,
+                 *       40
+                 *     ]
+                 */
+                bbox: number[];
+            }[];
+            usage?: {
+                /** @enum {string} */
+                unit: "part";
+                count: number;
+            };
+            /** @description When the job failed. */
+            error?: {
+                code: string;
+                message: string;
+            };
+        };
+        Model: {
+            /** @example langbiang-extract-1.0 */
+            id: string;
+            /** @example /v1/extract */
+            endpoint: string;
+            /**
+             * @description What one unit of usage is.
+             * @example page
+             */
+            unit: string;
+            description: string;
+            plans: components["schemas"]["Plan"][];
+        };
+        Plan: {
+            /** @example basic */
+            tier: string;
+            /** @example jpy */
+            currency: string;
+            /**
+             * @description In the currency’s smallest unit, before tax. null: priced by contract.
+             * @example 20000
+             */
+            monthly_fee: number | null;
+            /**
+             * @description Units included each month.
+             * @example 1000
+             */
+            included_units: number | null;
+            /**
+             * @description Price of each unit beyond included_units, before tax.
+             * @example 25
+             */
+            overage_unit_price: number | null;
+        };
+        /**
+         * @example {
+         *       "error": {
+         *         "code": "unauthorized",
+         *         "message": "Missing or invalid API key."
+         *       }
+         *     }
+         */
         Error: {
             error: {
                 code: string;
                 message: string;
             };
         };
-        /** @enum {string} */
-        Unit: "page" | "part";
-        UnitUsage: {
-            unit: components["schemas"]["Unit"];
-            count: number;
-        };
-        Plan: {
+        ExtractResponse: {
+            /** @description Up to 50 per page, most important first. */
+            fields: components["schemas"]["Field"][];
+            line_items: components["schemas"]["LineItem"][];
+            /** @description A short note on the document: what it is and what to double-check, or the answer to `question`. */
+            comment: string;
+            /** @description Keys of the fields the comment mentions. */
+            refs: string[];
+            /** @example ext_3kTq9wYb2mNc7XvR */
             id: string;
-            name: string;
-            monthly_fee: number;
-            /** @description Units included per period */
-            included: number;
-            /** @description Price per unit above `included` */
-            overage_price: number;
-            currency: string;
-        };
-        Model: {
-            id: string;
-            description?: string;
-            unit: components["schemas"]["Unit"];
-            plans: components["schemas"]["Plan"][];
-        };
-        ModelList: {
-            data: components["schemas"]["Model"][];
-        };
-        ExtractOptions: {
-            model: string;
-            /** @description Hint for the document language, e.g. ja, vi, en */
-            lang?: string;
-            question?: string;
-            /** @description Suggested field keys */
-            fields?: string[];
-        };
-        ExtractMultipart: components["schemas"]["ExtractOptions"] & {
-            /**
-             * Format: binary
-             * @description png, jpeg, webp, gif or pdf, up to 10 MB
-             */
-            file: string;
-        };
-        ExtractJson: components["schemas"]["ExtractOptions"] & {
-            /** Format: uri */
-            url: string;
-        };
-        Field: {
-            key: string;
-            /** @description As printed on the document */
-            label: string;
-            /** @description As printed on the document */
-            value: string;
-            /** @description [x, y, w, h] normalised 0..1 to the page */
-            box: number[];
-            unsure: boolean;
-            page: number;
-        };
-        ExtractResult: {
-            id: string;
+            /** @example langbiang-extract-1.0 */
             model: string;
             pages: number;
-            fields: components["schemas"]["Field"][];
-            line_items: {
-                [key: string]: unknown;
-            }[];
-            comment: string;
-            /** @description Keys of the fields the comment mentions */
-            refs: string[];
-            usage: components["schemas"]["UnitUsage"];
+            usage: {
+                /** @enum {string} */
+                unit: "page";
+                /** @description Pages billed by this call. */
+                count: number;
+            };
         };
-        CadOptions: {
-            model: string;
+        Field: {
             /**
-             * Format: uri
-             * @description Called with a signed `WebhookEvent` when the job finishes
+             * @description snake_case id, stable for the same field across documents.
+             * @example order_number
              */
-            webhook_url?: string;
+            key: string;
+            /**
+             * @description The field’s name as printed, not translated.
+             * @example 注文番号
+             */
+            label: string;
+            /**
+             * @description The value as printed, not translated.
+             * @example PO-2026-0815
+             */
+            value: string;
+            box?: components["schemas"]["Box"];
+            /** @description true when the value was hard to read. */
+            unsure: boolean;
+            /**
+             * @description 1-based page number.
+             * @example 1
+             */
+            page: number;
         };
-        CadMultipart: components["schemas"]["CadOptions"] & {
-            /** Format: binary */
-            file: string;
-        };
-        CadJson: components["schemas"]["CadOptions"] & {
-            /** Format: uri */
-            url: string;
-        };
-        /** @enum {string} */
-        CadStatus: "queued" | "running" | "succeeded" | "failed";
-        Part: {
-            name: string;
-            /** Format: uri */
-            dxf_url: string;
-            bbox: number[];
-        };
-        CadJob: {
-            id: string;
-            model?: string;
-            status: components["schemas"]["CadStatus"];
-            parts?: components["schemas"]["Part"][];
-            usage?: components["schemas"]["UnitUsage"];
-            error?: components["schemas"]["Error"]["error"];
-        };
-        WebhookEvent: {
-            /** @enum {string} */
-            type: "cad.succeeded" | "cad.failed";
-            data: components["schemas"]["CadJob"];
-        };
-        UsageRow: {
-            model: string;
-            unit: components["schemas"]["Unit"];
-            /** @description Units used in the range */
-            count: number;
-            /** @description Units included this period */
-            included: number;
-            /** @description Units above quota this period */
-            overage: number;
+        /**
+         * @description [x, y, width, height] as fractions (0 to 1) of the page, from its top-left corner.
+         * @example [
+         *       0.62,
+         *       0.08,
+         *       0.21,
+         *       0.03
+         *     ]
+         */
+        Box: number[];
+        /** @description One row of a table of goods or services. */
+        LineItem: {
+            page: number;
+            box?: components["schemas"]["Box"];
+            /**
+             * @example [
+             *       {
+             *         "key": "item",
+             *         "label": "品名",
+             *         "value": "ステンレスボルト M8"
+             *       }
+             *     ]
+             */
+            cells: {
+                key: string;
+                label: string;
+                value: string;
+            }[];
+            unsure: boolean;
         };
         Usage: {
-            /** Format: date */
             from: string;
-            /** Format: date */
             to: string;
-            data: components["schemas"]["UsageRow"][];
+            days: {
+                /** @example 2026-10-05 */
+                date: string;
+                model: string;
+                units: number;
+                overage_units: number;
+                calls: number;
+                /** @description Calls that failed and were not billed. */
+                errors: number;
+            }[];
+            plans: components["schemas"]["PlanStatus"][];
+        };
+        PlanStatus: {
+            /** @example langbiang-extract-1.0 */
+            model: string;
+            /** @example basic */
+            tier: string;
+            /**
+             * @description active, past_due, …
+             * @example active
+             */
+            status: string;
+            /** @example 2026-10-01T00:00:00.000Z */
+            period_start: string;
+            /** @example 2026-11-01T00:00:00.000Z */
+            period_end: string;
+            included_units: number;
+            /** @description Units used this period, overage included. */
+            used_units: number;
+            overage_units: number;
+            /** @description Overage units allowed this period; calls past it get 402. */
+            overage_cap: number;
         };
         Me: {
-            org: {
+            organization: {
                 id: string;
                 name: string;
             };
-            subscriptions: {
-                model: string;
-                plan: string;
-                status: string;
-            }[];
+            key: {
+                id: string;
+                /** @enum {string} */
+                mode: "live" | "test";
+                /** @description Endpoints the key may call; null: all. */
+                scopes: string[] | null;
+            };
+            /** @description Verifies the Montek-Signature of webhooks for jobs started with keys of this mode (live or test). */
+            webhook_secret: string | null;
+            plans: components["schemas"]["PlanStatus"][];
         };
     };
-    responses: {
-        /** @description 401 bad key; 402 no plan for this model, overage cap reached or past due; 413 file too large; 415 unsupported type; 429 rate limited; 5xx server error. */
-        Error: {
-            headers: {
-                "Retry-After"?: string;
-                [name: string]: unknown;
-            };
-            content: {
-                "application/json": components["schemas"]["Error"];
-            };
-        };
-    };
-    parameters: {
-        IdempotencyKey: string;
-    };
+    responses: never;
+    parameters: never;
     requestBodies: never;
     headers: never;
     pathItems: never;
@@ -324,63 +414,226 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description OK */
+            /** @description The models. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ModelList"];
+                    "application/json": {
+                        data: components["schemas"]["Model"][];
+                    };
                 };
             };
-            default: components["responses"]["Error"];
+            /** @description Missing or invalid API key. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Too many requests for this key. Retry after the number of seconds in Retry-After. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     extract: {
         parameters: {
             query?: never;
             header?: {
-                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                /** @description A retry with the same key and request is billed once. */
+                "idempotency-key"?: string;
             };
             path?: never;
             cookie?: never;
         };
-        requestBody: {
+        requestBody?: {
             content: {
-                "multipart/form-data": components["schemas"]["ExtractMultipart"];
-                "application/json": components["schemas"]["ExtractJson"];
+                "multipart/form-data": {
+                    /** @enum {string} */
+                    model: "langbiang-extract-1.0";
+                    /**
+                     * @description Your language, for `comment` when neither a question nor the document decides it.
+                     * @enum {string}
+                     */
+                    lang?: "en" | "ja" | "vi";
+                    /** @description A question about the document, answered in `comment`. */
+                    question?: string;
+                    /**
+                     * Format: binary
+                     * @description PDF (up to 10 MB, 30 pages) or PNG, JPEG, WebP, GIF image (up to 5 MB).
+                     */
+                    file: string;
+                    /** @description Field names to look for first: repeat the part, or separate names with commas. */
+                    fields?: string | string[];
+                };
+                "application/json": {
+                    /** @enum {string} */
+                    model: "langbiang-extract-1.0";
+                    /**
+                     * @description Your language, for `comment` when neither a question nor the document decides it.
+                     * @enum {string}
+                     */
+                    lang?: "en" | "ja" | "vi";
+                    /** @description A question about the document, answered in `comment`. */
+                    question?: string;
+                    /**
+                     * Format: uri
+                     * @description Where to download the file from; same limits as an upload.
+                     */
+                    url: string;
+                    /** @description Field names to look for first. */
+                    fields?: string[];
+                };
             };
         };
         responses: {
-            /** @description OK */
+            /** @description What the document says. */
             200: {
+                headers: {
+                    /** @description Included pages left this period (live keys). */
+                    "X-Usage-Remaining"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExtractResponse"];
+                };
+            };
+            /** @description The request is malformed. */
+            400: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ExtractResult"];
+                    "application/json": components["schemas"]["Error"];
                 };
             };
-            default: components["responses"]["Error"];
+            /** @description Missing or invalid API key. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No active plan for this model, or the plan does not allow more use. */
+            402: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The key is not allowed to call this endpoint. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The file is too large. */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The file type is not supported. */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The document could not be read. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Too many requests for this key. Retry after the number of seconds in Retry-After. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The model is temporarily unavailable. Retry later. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     createCadJob: {
         parameters: {
             query?: never;
             header?: {
-                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                /** @description A retry with the same key and request returns the same job. */
+                "idempotency-key"?: string;
             };
             path?: never;
             cookie?: never;
         };
-        requestBody: {
+        requestBody?: {
             content: {
-                "multipart/form-data": components["schemas"]["CadMultipart"];
-                "application/json": components["schemas"]["CadJson"];
+                "multipart/form-data": {
+                    /** @enum {string} */
+                    model: "fansipan-cad-1.0";
+                    /**
+                     * Format: uri
+                     * @description Receives `cad.succeeded` or `cad.failed` when the job ends, signed with Montek-Signature.
+                     */
+                    webhook_url?: string;
+                    /**
+                     * Format: binary
+                     * @description The sketch: a photo or scan (PNG, JPEG, WebP, GIF up to 5 MB, or PDF up to 10 MB).
+                     */
+                    file: string;
+                };
+                "application/json": {
+                    /** @enum {string} */
+                    model: "fansipan-cad-1.0";
+                    /**
+                     * Format: uri
+                     * @description Receives `cad.succeeded` or `cad.failed` when the job ends, signed with Montek-Signature.
+                     */
+                    webhook_url?: string;
+                    /**
+                     * Format: uri
+                     * @description Where to download the sketch from; same limits as an upload.
+                     */
+                    url: string;
+                };
             };
         };
         responses: {
-            /** @description Job accepted */
+            /** @description The job. */
             202: {
                 headers: {
                     [name: string]: unknown;
@@ -389,7 +642,87 @@ export interface operations {
                     "application/json": components["schemas"]["CadJob"];
                 };
             };
-            default: components["responses"]["Error"];
+            /** @description The request is malformed. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Missing or invalid API key. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No active plan for this model, or the plan does not allow more use. */
+            402: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The key is not allowed to call this endpoint. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The file is too large. */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The file type is not supported. */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The document could not be read. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Too many requests for this key. Retry after the number of seconds in Retry-After. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The model is temporarily unavailable. Retry later. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     getCadJob: {
@@ -403,7 +736,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description OK */
+            /** @description The job. */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -412,16 +745,92 @@ export interface operations {
                     "application/json": components["schemas"]["CadJob"];
                 };
             };
-            default: components["responses"]["Error"];
+            /** @description Missing or invalid API key. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Too many requests for this key. Retry after the number of seconds in Retry-After. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getCadPart: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                index: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description ASCII DXF in millimetres. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/dxf": string;
+                };
+            };
+            /** @description Missing or invalid API key. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Too many requests for this key. Retry after the number of seconds in Retry-After. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     getUsage: {
         parameters: {
             query?: {
+                /** @description First day, UTC. Default: 29 days before `to`. */
                 from?: string;
+                /** @description Last day, UTC. Default: today. */
                 to?: string;
                 model?: string;
-                /** @description API key id */
+                /** @description Only calls made with this key id. */
                 key?: string;
             };
             header?: never;
@@ -430,7 +839,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description OK */
+            /** @description Usage. */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -439,7 +848,42 @@ export interface operations {
                     "application/json": components["schemas"]["Usage"];
                 };
             };
-            default: components["responses"]["Error"];
+            /** @description The request is malformed. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Missing or invalid API key. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The key is not allowed to call this endpoint. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Too many requests for this key. Retry after the number of seconds in Retry-After. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     getMe: {
@@ -451,7 +895,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description OK */
+            /** @description Who is calling. */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -460,7 +904,82 @@ export interface operations {
                     "application/json": components["schemas"]["Me"];
                 };
             };
-            default: components["responses"]["Error"];
+            /** @description Missing or invalid API key. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Too many requests for this key. Retry after the number of seconds in Retry-After. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    cadSucceeded: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description `t=<unix seconds>,v1=<hex HMAC-SHA256 of "<t>.<body>">`. */
+                "montek-signature": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    type: "cad.succeeded";
+                    data: components["schemas"]["CadJob"];
+                };
+            };
+        };
+        responses: {
+            /** @description Any 2xx acknowledges the event. Otherwise it is sent again after 2 s, then after another 10 s, then dropped; GET /v1/cad/{id} keeps the result. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    cadFailed: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description `t=<unix seconds>,v1=<hex HMAC-SHA256 of "<t>.<body>">`. */
+                "montek-signature": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    type: "cad.failed";
+                    data: components["schemas"]["CadJob"];
+                };
+            };
+        };
+        responses: {
+            /** @description Any 2xx acknowledges the event. Otherwise it is sent again after 2 s, then after another 10 s, then dropped; GET /v1/cad/{id} keeps the result. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
 }

@@ -3,7 +3,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { verifyWebhook, WebhookSignatureError } from '../src/index.js';
 
 const secret = 'whsec_test';
-const payload = JSON.stringify({ type: 'cad.succeeded', data: { id: 'cad_1', status: 'succeeded', parts: [{ name: 'a', dxf_url: 'u', bbox: [0, 0, 1, 1] }] } });
+const payload = JSON.stringify({
+  type: 'cad.succeeded',
+  data: { id: 'cad_1', model: 'fansipan-cad-1.0', status: 'succeeded', created_at: 't0', finished_at: 't1', parts: [{ name: 'a', dxf_url: 'u', bbox: [0, 0, 1, 1] }], usage: { unit: 'part', count: 1 } },
+});
 const now = () => Math.floor(Date.now() / 1000);
 const sign = (body: string, t = now(), key = secret) => createHmac('sha256', key).update(`${t}.${body}`).digest('hex');
 
@@ -15,6 +18,7 @@ describe('verifyWebhook', () => {
     const event = await verifyWebhook(payload, `t=${t},v1=${sign(payload, t)}`, secret);
     expect(event.type).toBe('cad.succeeded');
     expect(event.data.parts?.[0]?.dxfUrl).toBe('u');
+    expect(event.data.finishedAt).toBe('t1');
   });
 
   it('accepts raw bytes, the env secret, and any matching v1 during rotation', async () => {
