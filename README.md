@@ -35,11 +35,11 @@ const order = await montek.extract({
   file: 'order.pdf',               // a path, Buffer, Blob/File or URL; PDF pages are split server-side
   model: 'langbiang-extract-1.0',
   lang: 'ja',                      // optional hint
-  fields: ['po_number', 'total'],  // optional field-name hints
+  fields: ['order_number', 'total'], // optional field-name hints
 });
 
 for (const f of order.fields) console.log(f.key, f.label, f.value, f.unsure ? '(unsure)' : '');
-console.log(order.lineItems);
+for (const row of order.lineItems) console.log(row.cells.map((c) => `${c.label}: ${c.value}`).join(', '));
 console.log(order.usage);          // { unit: 'page', count: 1 }: compare with your bill
 ```
 
@@ -49,14 +49,18 @@ console.log(order.usage);          // { unit: 'page', count: 1 }: compare with y
 const job = await montek.cad.create({ file: 'sketch.jpg', model: 'fansipan-cad-1.0' });
 const done = await job.wait();     // polls with backoff until the job finishes
 
-for (const part of done.parts) console.log(part.name, part.dxfUrl, part.bbox);
+for (const [i, part] of done.parts.entries()) {
+  const dxf = await montek.cad.getPart(job.id, i + 1); // ASCII DXF in millimetres
+  console.log(part.name, part.bbox, dxf.length);
+}
 ```
 
 **5. See the models and prices** (never hard-coded in the SDK)
 
 ```ts
 for (const m of await montek.models.list()) {
-  console.log(m.id, m.unit, m.plans.map((p) => `${p.name}: ${p.monthlyFee} ${p.currency}`));
+  // Fees are in the currency's smallest unit, before tax; null means priced by contract.
+  console.log(m.id, m.unit, m.plans.map((p) => `${p.tier}: ${p.monthlyFee ?? 'contract'} ${p.currency}`));
 }
 ```
 
@@ -68,7 +72,8 @@ Complete scripts: [examples/read-fax-order.ts](examples/read-fax-order.ts) and
 ### Files
 
 `file` accepts a path (Node, Bun, Deno), a `Buffer`/`Uint8Array`/`ArrayBuffer`, a `Blob`/`File`, or a public
-`URL` (also an `http(s)://` string), which the API downloads itself. PNG, JPEG, WebP, GIF and PDF up to 10 MB.
+`URL` (also an `http(s)://` string), which the API downloads itself. PDF up to 10 MB and 30 pages; PNG, JPEG,
+WebP or GIF up to 5 MB.
 
 Responses use camelCase (`lineItems`, `dxfUrl`) where the HTTP API uses snake_case.
 
@@ -78,11 +83,11 @@ Every error extends `MontekError`, with `status` and `code` from the API.
 
 | Class | When |
 |---|---|
-| `AuthError` | 401/403: missing, wrong or revoked key |
+| `AuthError` | 401: missing or invalid key; 403: the key may not call this endpoint |
 | `NoPlanError` | 402: no plan for this model, overage cap reached, or payment past due |
 | `RateLimitError` | 429 after the retries; `retryAfter` in seconds |
-| `ValidationError` | other 4xx, e.g. 413 file too large, 415 unsupported type |
-| `ServerError` | 5xx after the retries |
+| `ValidationError` | other 4xx: 400 malformed, 404 unknown job, 413 file too large, 415 unsupported type, 422 unreadable document |
+| `ServerError` | 5xx after the retries, e.g. 503 model temporarily unavailable |
 | `ConnectionError` | network failure or timeout after the retries |
 | `JobFailedError` | `job.wait()` saw the cad job fail; `job` holds its final state |
 | `WebhookSignatureError` | `verifyWebhook` rejected the request |
@@ -132,14 +137,19 @@ export default {
 };
 ```
 
-The secret defaults to the `MONTEK_WEBHOOK_SECRET` environment variable where `process.env` exists.
-Signatures older than 5 minutes are rejected.
+The secret is `(await montek.me()).webhookSecret`, one per key mode (live or test); it defaults to the
+`MONTEK_WEBHOOK_SECRET` environment variable where `process.env` exists. Signatures older than 5 minutes are
+rejected. Montek resends an unacknowledged event after 2 s and again after 10 s, so handle repeats; jobs and
+their DXF stay available from `cad.get()` / `cad.getPart()` for 7 days.
 
-### Usage
+### Usage and account
 
 ```ts
-const report = await montek.usage.get({ from: '2026-10-01', to: new Date(), model: 'langbiang-extract-1.0' });
-for (const row of report.data) console.log(row.model, row.count, row.unit, `included ${row.included}`, `overage ${row.overage}`);
+const usage = await montek.usage.get({ from: '2026-10-01', to: new Date(), model: 'langbiang-extract-1.0' });
+for (const day of usage.days) console.log(day.date, day.model, day.units, `overage ${day.overageUnits}`, `errors ${day.errors}`);
+for (const plan of usage.plans) console.log(plan.model, plan.tier, `${plan.usedUnits}/${plan.includedUnits}`, `cap ${plan.overageCap}`);
+
+const me = await montek.me(); // organization, key (id, mode, scopes), webhookSecret, plans
 ```
 
 ## Development
@@ -150,11 +160,11 @@ npm test             # mock-HTTP tests; set MONTEK_TEST_API_KEY=mk_test_... to a
 npm run typecheck
 npm run build        # dist/: ESM + CJS + .d.ts
 npm run smoke        # load dist/ and make a mocked call; also: deno run -A / bun run scripts/smoke.mjs
-npm run gen          # refresh spec/openapi.yaml and src/generated/ from the montek-api release
+npm run gen          # refresh spec/openapi.yaml and src/generated/ from montek-api (see scripts/gen.mjs)
 ```
 
-`src/generated/` is generated; never edit it by hand. Until montek-api publishes its `openapi.yaml`
-release asset, `spec/openapi.yaml` is a provisional hand-written spec and may change.
+`src/generated/` is generated; never edit it by hand. `spec/openapi.yaml` is montek-api's spec: from its
+release asset once it is tagged, until then from its `origin/develop` (`MONTEK_API_DIR=/path/to/montek-api npm run gen`).
 
 CI (`.github/workflows/ci.yml`) runs the tests on Node 20, 22 and 24, and the smoke check on Node 18, Deno and Bun.
 The SDK's major version follows the API's (`/v1` → `1.x`). Changes are listed in [CHANGELOG.md](CHANGELOG.md).
