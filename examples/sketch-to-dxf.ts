@@ -21,12 +21,11 @@ console.log(`Job ${job.id}: ${job.status}`);
 try {
   const done = await job.wait(); // polls with backoff; on a server, pass webhookUrl instead
   await mkdir(outDir, { recursive: true });
-  for (const part of done.parts) {
-    const res = await fetch(part.dxfUrl);
-    if (!res.ok) throw new Error(`Downloading ${part.name} failed: HTTP ${res.status}`);
+  for (const [i, part] of done.parts.entries()) {
+    const dxf = await montek.cad.getPart(job.id, i + 1); // dxfUrl needs the API key, so download through the SDK
     const path = join(outDir, `${part.name.replace(/[^\w.-]+/g, '_')}.dxf`);
-    await writeFile(path, new Uint8Array(await res.arrayBuffer()));
-    console.log(`${path}  bbox ${part.bbox.join(' ')}`);
+    await writeFile(path, dxf);
+    console.log(`${path}  bbox ${part.bbox.join(' ')} mm`);
   }
   console.log(`Billed ${done.usage.count} ${done.usage.unit}(s)`);
 } catch (err) {

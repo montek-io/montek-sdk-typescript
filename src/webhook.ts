@@ -10,7 +10,8 @@ const TOLERANCE_S = 5 * 60;
  * Check a webhook from Montek and return its event.
  * `payload` is the raw request body (not re-serialised JSON), `signature` the `Montek-Signature` header
  * (`t=<unix seconds>,v1=<hex HMAC-SHA256 of "<t>.<payload>">`; several `v1` while a secret rotates).
- * `secret` defaults to the `MONTEK_WEBHOOK_SECRET` environment variable.
+ * `secret` is the `webhookSecret` of `montek.me()` for the key's mode (live or test); it defaults to the
+ * `MONTEK_WEBHOOK_SECRET` environment variable.
  * Throws `WebhookSignatureError` when the signature is missing, wrong or older than 5 minutes.
  */
 export async function verifyWebhook(

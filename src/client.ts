@@ -5,7 +5,7 @@ import { Cad } from './resources/cad.js';
 import { Models } from './resources/models.js';
 import { Usage } from './resources/usage.js';
 import { env, isBrowser, sleep, webCrypto } from './runtime.js';
-import type { ExtractParams, ExtractResult } from './types.js';
+import type { ExtractParams, ExtractResponse, Me } from './types.js';
 
 export interface ClientOptions {
   /** Defaults to the `MONTEK_API_KEY` environment variable. */
@@ -23,6 +23,8 @@ export interface ClientOptions {
 interface RequestOptions {
   query?: Record<string, string | undefined>;
   body?: FormData | Record<string, unknown>;
+  /** Return the body as text instead of camelCased JSON. */
+  text?: boolean;
 }
 
 /** Longest `Retry-After` the client waits out; beyond it the error is thrown right away. */
@@ -56,15 +58,20 @@ export class Montek {
   }
 
   /** Read a business document (image or PDF; the server splits pages) into fields, boxes and line items. */
-  extract(params: ExtractParams): Promise<ExtractResult> {
+  extract(params: ExtractParams): Promise<ExtractResponse> {
     return extract(this, params);
+  }
+
+  /** The key, its organization, its plans this period, and the webhook secret for its mode. */
+  me(): Promise<Me> {
+    return this.request('GET', '/v1/me');
   }
 
   /**
    * Call an endpoint: retries 429/5xx/network errors with backoff (honouring `Retry-After`),
    * sends one `Idempotency-Key` across the retries of a POST, and camelCases the JSON response.
    */
-  async request<T>(method: 'GET' | 'POST', path: string, { query, body }: RequestOptions = {}): Promise<T> {
+  async request<T>(method: 'GET' | 'POST', path: string, { query, body, text }: RequestOptions = {}): Promise<T> {
     const url = new URL(this.baseURL + path);
     for (const [key, value] of Object.entries(query ?? {})) if (value !== undefined) url.searchParams.set(key, value);
 
@@ -90,7 +97,7 @@ export class Montek {
         const reason = (err as Error).name === 'TimeoutError' ? `timed out after ${this.timeout} ms` : String(err);
         throw new ConnectionError(`${method} ${path} failed: ${reason}`);
       }
-      if (res.ok) return camelize(await res.json()) as T;
+      if (res.ok) return (text ? await res.text() : camelize(await res.json())) as T;
 
       const retryable = res.status === 429 || res.status >= 500;
       const retryAfter = retryAfterSeconds(res.headers);
