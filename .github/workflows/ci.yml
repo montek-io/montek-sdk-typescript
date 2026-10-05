@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop, 'feature/**', 'hotfix/**']
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [20, 22, 24]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+        env:
+          # Runs the mk_test_ integration test when the secret is set; skipped otherwise.
+          MONTEK_TEST_API_KEY: ${{ secrets.MONTEK_TEST_API_KEY }}
+      - run: npm run build
+      - run: npm run smoke
+
+  # The built package on the other supported runtimes (vitest itself needs Node 20+).
+  runtimes:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci && npm run build
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 18
+      - run: node scripts/smoke.mjs
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - run: deno run -A scripts/smoke.mjs
+      - uses: oven-sh/setup-bun@v2
+      - run: bun run scripts/smoke.mjs

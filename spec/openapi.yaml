@@ -1,0 +1,358 @@
+# PROVISIONAL SPEC — hand-written from the agreed v1 API contract
+# because montek-api has not published an `openapi.yaml` release asset yet.
+# `npm run gen` replaces this file with the real asset once one exists.
+# Shapes marked `x-provisional: true` are guesses not fixed by the contract; expect them to change.
+openapi: 3.1.0
+info:
+  title: Montek API
+  version: 1.0.0-provisional
+  x-provisional: true
+servers:
+  - url: https://api.montek.io
+security:
+  - bearer: []
+paths:
+  /v1/models:
+    get:
+      operationId: listModels
+      summary: Models, their billing unit, plans and prices
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ModelList' }
+        default: { $ref: '#/components/responses/Error' }
+  /v1/extract:
+    post:
+      operationId: extract
+      summary: Read a business document into fields, boxes and line items
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: { $ref: '#/components/schemas/ExtractMultipart' }
+          application/json:
+            schema: { $ref: '#/components/schemas/ExtractJson' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExtractResult' }
+        default: { $ref: '#/components/responses/Error' }
+  /v1/cad:
+    post:
+      operationId: createCadJob
+      summary: Start a sketch-to-DXF job
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: { $ref: '#/components/schemas/CadMultipart' }
+          application/json:
+            schema: { $ref: '#/components/schemas/CadJson' }
+      responses:
+        '202':
+          description: Job accepted
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CadJob' }
+        default: { $ref: '#/components/responses/Error' }
+  /v1/cad/{id}:
+    get:
+      operationId: getCadJob
+      summary: Job status; parts and usage once succeeded
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CadJob' }
+        default: { $ref: '#/components/responses/Error' }
+  /v1/usage:
+    get:
+      operationId: getUsage
+      summary: Usage of the org, with this period's quota and overage
+      parameters:
+        - { name: from, in: query, schema: { type: string, format: date } }
+        - { name: to, in: query, schema: { type: string, format: date } }
+        - { name: model, in: query, schema: { type: string } }
+        - { name: key, in: query, description: API key id, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Usage' }
+        default: { $ref: '#/components/responses/Error' }
+  /v1/me:
+    get:
+      operationId: getMe
+      summary: The org behind the key and its plan per model
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Me' }
+        default: { $ref: '#/components/responses/Error' }
+webhooks:
+  cadJob:
+    post:
+      summary: Sent when a cad job finishes
+      description: >-
+        Signed with HMAC-SHA256 using the org's webhook secret. Header
+        `Montek-Signature: t=<unix seconds>,v1=<hex hmac of "<t>.<raw body>">`.
+      x-provisional: true
+      parameters:
+        - name: Montek-Signature
+          in: header
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WebhookEvent' }
+      responses:
+        '200': { description: Acknowledged }
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      description: '`mk_live_…` keys are metered; `mk_test_…` keys return sample results and are not metered.'
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      schema: { type: string }
+  responses:
+    Error:
+      description: '401 bad key; 402 no plan for this model, overage cap reached or past due; 413 file too large; 415 unsupported type; 429 rate limited; 5xx server error.'
+      headers:
+        Retry-After: { schema: { type: string } }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string }
+            message: { type: string }
+    Unit:
+      type: string
+      enum: [page, part]
+    UnitUsage:
+      type: object
+      required: [unit, count]
+      properties:
+        unit: { $ref: '#/components/schemas/Unit' }
+        count: { type: integer }
+    Plan:
+      type: object
+      x-provisional: true
+      required: [id, name, monthly_fee, included, overage_price, currency]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        monthly_fee: { type: number }
+        included: { type: integer, description: Units included per period }
+        overage_price: { type: number, description: Price per unit above `included` }
+        currency: { type: string }
+    Model:
+      type: object
+      required: [id, unit, plans]
+      properties:
+        id: { type: string }
+        description: { type: string }
+        unit: { $ref: '#/components/schemas/Unit' }
+        plans:
+          type: array
+          items: { $ref: '#/components/schemas/Plan' }
+    ModelList:
+      type: object
+      x-provisional: true
+      required: [data]
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/Model' }
+    ExtractOptions:
+      type: object
+      required: [model]
+      properties:
+        model: { type: string }
+        lang: { type: string, description: 'Hint for the document language, e.g. ja, vi, en' }
+        question: { type: string }
+        fields:
+          type: array
+          description: Suggested field keys
+          items: { type: string }
+    ExtractMultipart:
+      allOf:
+        - $ref: '#/components/schemas/ExtractOptions'
+        - type: object
+          required: [file]
+          properties:
+            file: { type: string, format: binary, description: 'png, jpeg, webp, gif or pdf, up to 10 MB' }
+    ExtractJson:
+      allOf:
+        - $ref: '#/components/schemas/ExtractOptions'
+        - type: object
+          required: [url]
+          properties:
+            url: { type: string, format: uri }
+    Field:
+      type: object
+      required: [key, label, value, box, unsure, page]
+      properties:
+        key: { type: string }
+        label: { type: string, description: As printed on the document }
+        value: { type: string, description: As printed on the document }
+        box:
+          type: array
+          description: '[x, y, w, h] normalised 0..1 to the page'
+          items: { type: number }
+          minItems: 4
+          maxItems: 4
+        unsure: { type: boolean }
+        page: { type: integer }
+    ExtractResult:
+      type: object
+      required: [id, model, pages, fields, line_items, comment, refs, usage]
+      properties:
+        id: { type: string }
+        model: { type: string }
+        pages: { type: integer }
+        fields:
+          type: array
+          items: { $ref: '#/components/schemas/Field' }
+        line_items:
+          type: array
+          x-provisional: true
+          items:
+            type: object
+            additionalProperties: true
+        comment: { type: string }
+        refs:
+          type: array
+          description: Keys of the fields the comment mentions
+          items: { type: string }
+        usage: { $ref: '#/components/schemas/UnitUsage' }
+    CadOptions:
+      type: object
+      required: [model]
+      properties:
+        model: { type: string }
+        webhook_url:
+          type: string
+          format: uri
+          x-provisional: true
+          description: Called with a signed `WebhookEvent` when the job finishes
+    CadMultipart:
+      allOf:
+        - $ref: '#/components/schemas/CadOptions'
+        - type: object
+          required: [file]
+          properties:
+            file: { type: string, format: binary }
+    CadJson:
+      allOf:
+        - $ref: '#/components/schemas/CadOptions'
+        - type: object
+          required: [url]
+          properties:
+            url: { type: string, format: uri }
+    CadStatus:
+      type: string
+      x-provisional: true
+      enum: [queued, running, succeeded, failed]
+    Part:
+      type: object
+      required: [name, dxf_url, bbox]
+      properties:
+        name: { type: string }
+        dxf_url: { type: string, format: uri }
+        bbox:
+          type: array
+          items: { type: number }
+          minItems: 4
+          maxItems: 4
+    CadJob:
+      type: object
+      required: [id, status]
+      properties:
+        id: { type: string }
+        model: { type: string }
+        status: { $ref: '#/components/schemas/CadStatus' }
+        parts:
+          type: array
+          items: { $ref: '#/components/schemas/Part' }
+        usage: { $ref: '#/components/schemas/UnitUsage' }
+        error: { $ref: '#/components/schemas/Error/properties/error' }
+    WebhookEvent:
+      type: object
+      x-provisional: true
+      required: [type, data]
+      properties:
+        type:
+          type: string
+          enum: [cad.succeeded, cad.failed]
+        data: { $ref: '#/components/schemas/CadJob' }
+    UsageRow:
+      type: object
+      x-provisional: true
+      required: [model, unit, count, included, overage]
+      properties:
+        model: { type: string }
+        unit: { $ref: '#/components/schemas/Unit' }
+        count: { type: integer, description: Units used in the range }
+        included: { type: integer, description: Units included this period }
+        overage: { type: integer, description: Units above quota this period }
+    Usage:
+      type: object
+      x-provisional: true
+      required: [from, to, data]
+      properties:
+        from: { type: string, format: date }
+        to: { type: string, format: date }
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/UsageRow' }
+    Me:
+      type: object
+      x-provisional: true
+      required: [org, subscriptions]
+      properties:
+        org:
+          type: object
+          required: [id, name]
+          properties:
+            id: { type: string }
+            name: { type: string }
+        subscriptions:
+          type: array
+          items:
+            type: object
+            required: [model, plan, status]
+            properties:
+              model: { type: string }
+              plan: { type: string }
+              status: { type: string }
