@@ -1,7 +1,10 @@
 import { camelize } from './casing.js';
 import { ConnectionError, MontekError, errorFromResponse, retryAfterSeconds } from './errors.js';
 import { extract } from './resources/extract.js';
-import { env, isBrowser, webCrypto } from './runtime.js';
+import { Cad } from './resources/cad.js';
+import { Models } from './resources/models.js';
+import { Usage } from './resources/usage.js';
+import { env, isBrowser, sleep, webCrypto } from './runtime.js';
 import type { ExtractParams, ExtractResult } from './types.js';
 
 export interface ClientOptions {
@@ -31,6 +34,13 @@ export class Montek {
   readonly timeout: number;
   readonly #apiKey: string;
   readonly #fetch: typeof fetch;
+
+  /** Sketch → DXF jobs. */
+  readonly cad = new Cad(this);
+  /** Units used, quota and overage of your org. */
+  readonly usage = new Usage(this);
+  /** Models with their unit, plans and prices. */
+  readonly models = new Models(this);
 
   constructor(options: ClientOptions = {}) {
     const apiKey = options.apiKey ?? env('MONTEK_API_KEY');
@@ -97,8 +107,4 @@ export class Montek {
 /** Exponential backoff with jitter: ~0.5 s, 1 s, 2 s … capped at 8 s. */
 function backoff(attempt: number): number {
   return Math.min(500 * 2 ** attempt, 8000) * (0.75 + Math.random() * 0.25);
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }

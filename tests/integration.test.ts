@@ -9,7 +9,7 @@ const PNG_1PX = Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFc
 describe.skipIf(!apiKey?.startsWith('mk_test_'))('integration (mk_test_)', () => {
   it('extract returns a sample result', async () => {
     const montek = new Montek({ apiKey });
-    const [model] = (await montek.request<{ data: { id: string; unit: string }[] }>('GET', '/v1/models')).data.filter((m) => m.unit === 'page');
+    const model = (await montek.models.list()).find((m) => m.unit === 'page');
     const r = await montek.extract({ file: PNG_1PX, model: model!.id });
     expect(r.id).toBeTruthy();
     expect(r.usage.unit).toBe('page');

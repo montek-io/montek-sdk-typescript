@@ -20,3 +20,7 @@ export function env(name: string): string | undefined {
 }
 
 export const isBrowser = typeof (globalThis as { document?: unknown }).document !== 'undefined';
+
+export function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}

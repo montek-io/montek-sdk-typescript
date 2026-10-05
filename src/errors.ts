@@ -1,3 +1,5 @@
+import type { CadJob } from './types.js';
+
 /** Base class of every error the SDK throws. `status` and `code` come from the API's `{error:{code,message}}`. */
 export class MontekError extends Error {
   readonly status: number | undefined;
@@ -32,6 +34,16 @@ export class ServerError extends MontekError {}
 
 /** No HTTP response: network failure or timeout, after the retries ran out. */
 export class ConnectionError extends MontekError {}
+
+/** A cad job ended with status `failed`; `job` holds its final state. */
+export class JobFailedError extends MontekError {
+  constructor(readonly job: CadJob) {
+    super(job.error?.message ?? `cad job ${job.id} failed`, undefined, job.error?.code);
+  }
+}
+
+/** `verifyWebhook` rejected the request: bad or missing signature, or a stale timestamp. */
+export class WebhookSignatureError extends MontekError {}
 
 export async function errorFromResponse(res: Response): Promise<MontekError> {
   const text = await res.text().catch(() => '');
