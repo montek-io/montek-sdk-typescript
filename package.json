@@ -1,6 +1,6 @@
 {
   "name": "@montek/sdk",
-  "version": "0.1.0",
+  "version": "1.0.0-alpha.0",
   "description": "Official TypeScript SDK for the Montek API (api.montek.io)",
   "license": "MIT",
   "repository": {
