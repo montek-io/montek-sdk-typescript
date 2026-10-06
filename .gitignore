@@ -4,5 +4,7 @@ coverage/
 .env
 *.log
 .DS_Store
+# Local Claude Code settings and worktrees
+.claude/
 # Private working plans: never committed (docs/ is public)
 plans/
