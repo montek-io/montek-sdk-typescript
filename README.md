@@ -169,6 +169,8 @@ release asset once it is tagged, until then from its `origin/develop` (`MONTEK_A
 CI (`.github/workflows/ci.yml`) runs the tests on Node 20, 22 and 24, and the smoke check on Node 18, Deno and Bun.
 The SDK's major version follows the API's (`/v1` → `1.x`). Changes are listed in [CHANGELOG.md](CHANGELOG.md).
 
+Releasing: an annotated tag `vX.Y.Z` equal to `package.json`'s version, on the release merge commit in `main`, whose message is `Release vX.Y.Z`, a blank line, then a Markdown summary of the changes (`git tag -a vX.Y.Z -F notes.md`). `.github/workflows/release.yml` then creates the GitHub Release: the summary on top, the generated list of pull requests below.
+
 ## License
 
 MIT
