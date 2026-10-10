@@ -1,0 +1,82 @@
+# On a montek-api release (dispatched by its release workflow, or run by hand with the tag): a pull request into
+# develop with that release's openapi.yaml and the types generated from it. The SDK is code, so a person reviews,
+# merges and releases it; nothing here publishes. A spec that changed only its version line opens nothing, and a
+# failure becomes an issue.
+name: follow-api
+
+on:
+  repository_dispatch:
+    types: [api-released]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: montek-api release tag, e.g. v0.1.2
+        required: true
+
+concurrency: follow-api
+
+permissions:
+  contents: read
+
+jobs:
+  follow:
+    runs-on: ubuntu-latest
+    env:
+      API_TAG: ${{ github.event.client_payload.tag || inputs.tag }}
+    steps:
+      # The release bot's token, not GITHUB_TOKEN: a pull request opened with GITHUB_TOKEN would not run CI
+      - uses: actions/create-github-app-token@v2
+        id: app
+        with:
+          app-id: ${{ secrets.RELEASE_BOT_APP_ID }}
+          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+          owner: montek-io
+          repositories: montek-sdk-typescript,montek-api
+      - uses: actions/checkout@v4
+        with:
+          ref: develop
+          token: ${{ steps.app.outputs.token }}
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+
+      - name: Take the release's openapi.yaml and generate the types
+        id: spec
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          MONTEK_API_TAG: ${{ env.API_TAG }}
+        run: |
+          gh release download "$API_TAG" -R montek-io/montek-api -p openapi.yaml -O spec/openapi.yaml --clobber
+          npm run gen
+          if git diff --quiet -I '^ *version: '; then
+            echo "montek-api $API_TAG changes nothing here"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Open the pull request
+        if: steps.spec.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          BOT: ${{ steps.app.outputs.app-slug }}[bot]
+        run: |
+          git config user.name "$BOT"
+          git config user.email "$(gh api "/users/$BOT" -q .id)+$BOT@users.noreply.github.com"
+          branch="feature/api-$API_TAG"
+          git switch -c "$branch"
+          git commit -am "Follow montek-api $API_TAG"
+          git push --force origin "$branch"
+          gh pr view "$branch" > /dev/null 2>&1 || gh pr create --base develop --head "$branch" \
+            --title "Follow montek-api $API_TAG" \
+            --body "The spec and the types generated from montek-api $API_TAG. CI checks that they match and runs the tests. Before merging, update the client for new or changed endpoints and add a CHANGELOG entry; release as usual."
+
+      - name: Say what went wrong
+        if: failure()
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          gh issue create --title "Following montek-api $API_TAG failed" \
+            --body "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"

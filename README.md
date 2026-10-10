@@ -165,6 +165,9 @@ npm run gen          # refresh spec/openapi.yaml and src/generated/ from montek-
 
 `src/generated/` is generated; never edit it by hand. `spec/openapi.yaml` is montek-api's spec: from its
 release asset once it is tagged, until then from its `origin/develop` (`MONTEK_API_DIR=/path/to/montek-api npm run gen`).
+When montek-api publishes a release, `.github/workflows/follow-api.yml` opens a pull request into `develop` with its
+spec and the regenerated types (branch `feature/api-vX.Y.Z`); review it, update the client and CHANGELOG, merge, and
+release as usual. It needs the `montek-release-bot` GitHub App (repository secrets `RELEASE_BOT_APP_ID`, `RELEASE_BOT_PRIVATE_KEY`).
 
 CI (`.github/workflows/ci.yml`) runs the tests on Node 20, 22 and 24, and the smoke check on Node 18, Deno and Bun.
 The SDK's major version follows the API's (`/v1` → `1.x`). Changes are listed in [CHANGELOG.md](CHANGELOG.md).
